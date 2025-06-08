@@ -206,6 +206,44 @@ class SoftwarePlanningServer {
             required: ['todoId', 'isComplete'],
           },
         },
+        {
+          name: 'view_plan',
+          description: 'View the current project plan in markdown format',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'view_tasks',
+          description: 'View the current project tasks in markdown format',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'set_working_directory',
+          description: 'Set the working directory for the current session (where .cursor folder will be created)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              directory: {
+                type: 'string',
+                description: 'Absolute or relative path to the project directory',
+              },
+            },
+            required: ['directory'],
+          },
+        },
+        {
+          name: 'get_working_directory',
+          description: 'Get the current working directory where plans are stored',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
       ],
     }));
 
@@ -344,6 +382,99 @@ class SoftwarePlanningServer {
           };
         }
 
+        case 'view_plan': {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          
+          try {
+            const planPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'plan.md');
+            const planContent = await fs.readFile(planPath, 'utf-8');
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: planContent,
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: '未找到计划文件。请先创建一个开发计划。',
+                },
+              ],
+            };
+          }
+        }
+
+        case 'view_tasks': {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          
+          try {
+            const tasksPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'tasks.md');
+            const tasksContent = await fs.readFile(tasksPath, 'utf-8');
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: tasksContent,
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: '未找到任务文件。请先创建一个开发计划。',
+                },
+              ],
+            };
+          }
+        }
+
+        case 'set_working_directory': {
+          const { directory } = request.params.arguments as { directory: string };
+          
+          try {
+            await storage.setWorkingDirectory(directory);
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `工作目录已设置为: ${storage.getCurrentWorkingDirectory()}\n计划文件将保存到: ${storage.getCurrentWorkingDirectory()}/.cursor/`,
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `设置工作目录失败: ${error instanceof Error ? error.message : String(error)}`,
+                },
+              ],
+            };
+          }
+        }
+
+        case 'get_working_directory': {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `当前工作目录: ${storage.getCurrentWorkingDirectory()}\n计划文件位置: ${storage.getCurrentWorkingDirectory()}/.cursor/`,
+              },
+            ],
+          };
+        }
+
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
@@ -354,10 +485,23 @@ class SoftwarePlanningServer {
   }
 
   async run() {
-    await storage.initialize();
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-    console.error('Software Planning MCP server running on stdio');
+    try {
+      console.error('[Server] Starting Software Planning MCP server...');
+      console.error(`[Server] Working directory: ${process.cwd()}`);
+      console.error(`[Server] Environment PWD: ${process.env.PWD || 'not set'}`);
+      console.error(`[Server] Environment INIT_CWD: ${process.env.INIT_CWD || 'not set'}`);
+      
+      await storage.initialize();
+      console.error('[Server] Storage initialized successfully');
+      
+      const transport = new StdioServerTransport();
+      await this.server.connect(transport);
+      console.error('Software Planning MCP server running on stdio');
+    } catch (error) {
+      console.error('[Server] Failed to start server:', error instanceof Error ? error.message : String(error));
+      console.error('[Server] Error details:', error);
+      throw error;
+    }
   }
 }
 
