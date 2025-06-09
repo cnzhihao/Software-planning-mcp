@@ -386,8 +386,29 @@ class SoftwarePlanningServer {
           const fs = await import('fs/promises');
           const path = await import('path');
           
+          // 先检查工作目录是否正确
+          const currentDir = storage.getCurrentWorkingDirectory();
+          const isDefaultCursorDir = currentDir.includes('cursor') && !currentDir.includes('github');
+          
+          if (isDefaultCursorDir) {
+            let message = '⚠️  检测到当前工作目录可能不是项目目录：' + currentDir;
+            message += '\n\n建议操作：';
+            message += '\n1. 调用 get_working_directory 确认当前工作目录';
+            message += '\n2. 如果不是项目目录，请调用 set_working_directory 设置到正确的项目目录';
+            message += '\n3. 然后重新获取开发计划';
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: message,
+                },
+              ],
+            };
+          }
+          
           try {
-            const planPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'plan.md');
+            const planPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan', 'plan.md');
             const planContent = await fs.readFile(planPath, 'utf-8');
             
             return {
@@ -414,8 +435,29 @@ class SoftwarePlanningServer {
           const fs = await import('fs/promises');
           const path = await import('path');
           
+          // 先检查工作目录是否正确
+          const currentDir = storage.getCurrentWorkingDirectory();
+          const isDefaultCursorDir = currentDir.includes('cursor') && !currentDir.includes('github');
+          
+          if (isDefaultCursorDir) {
+            let message = '⚠️  检测到当前工作目录可能不是项目目录：' + currentDir;
+            message += '\n\n建议操作：';
+            message += '\n1. 调用 get_working_directory 确认当前工作目录';
+            message += '\n2. 如果不是项目目录，请调用 set_working_directory 设置到正确的项目目录';
+            message += '\n3. 然后重新获取开发任务';
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: message,
+                },
+              ],
+            };
+          }
+          
           try {
-            const tasksPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'tasks.md');
+            const tasksPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan', 'tasks.md');
             const tasksContent = await fs.readFile(tasksPath, 'utf-8');
             
             return {
@@ -443,12 +485,14 @@ class SoftwarePlanningServer {
           
           try {
             await storage.setWorkingDirectory(directory);
+            const path = await import('path');
+            const planDir = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan');
             
             return {
               content: [
                 {
                   type: 'text',
-                  text: `工作目录已设置为: ${storage.getCurrentWorkingDirectory()}\n计划文件将保存到: ${storage.getCurrentWorkingDirectory()}/.cursor/`,
+                  text: `工作目录已设置为: ${storage.getCurrentWorkingDirectory()}\n计划文件将保存到: ${planDir}`,
                 },
               ],
             };
@@ -465,11 +509,14 @@ class SoftwarePlanningServer {
         }
 
         case 'get_working_directory': {
+          const path = await import('path');
+          const planDir = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan');
+          
           return {
             content: [
               {
                 type: 'text',
-                text: `当前工作目录: ${storage.getCurrentWorkingDirectory()}\n计划文件位置: ${storage.getCurrentWorkingDirectory()}/.cursor/`,
+                text: `当前工作目录: ${storage.getCurrentWorkingDirectory()}\n计划文件位置: ${planDir}`,
               },
             ],
           };
@@ -487,9 +534,11 @@ class SoftwarePlanningServer {
   async run() {
     try {
       console.error('[Server] Starting Software Planning MCP server...');
-      console.error(`[Server] Working directory: ${process.cwd()}`);
-      console.error(`[Server] Environment PWD: ${process.env.PWD || 'not set'}`);
-      console.error(`[Server] Environment INIT_CWD: ${process.env.INIT_CWD || 'not set'}`);
+      
+      // 自动检测和设置工作目录
+      await this.initializeWorkingDirectory();
+      
+      console.error(`[Server] Working directory: ${storage.getCurrentWorkingDirectory()}`);
       
       await storage.initialize();
       console.error('[Server] Storage initialized successfully');
@@ -501,6 +550,48 @@ class SoftwarePlanningServer {
       console.error('[Server] Failed to start server:', error instanceof Error ? error.message : String(error));
       console.error('[Server] Error details:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 自动初始化工作目录
+   * 优先级：环境变量 > 项目根目录检测 > 当前工作目录
+   */
+  private async initializeWorkingDirectory(): Promise<void> {
+    let workingDir: string | null = null;
+    
+    // 1. 尝试从环境变量获取（兼容原有的启动脚本方式）
+    if (process.env.PWD && process.env.PWD !== process.cwd()) {
+      workingDir = process.env.PWD;
+      console.error(`[Server] Using PWD environment variable: ${workingDir}`);
+    } else if (process.env.INIT_CWD && process.env.INIT_CWD !== process.cwd()) {
+      workingDir = process.env.INIT_CWD;
+      console.error(`[Server] Using INIT_CWD environment variable: ${workingDir}`);
+    }
+    
+    // 2. 如果环境变量不可用，让storage自动检测项目根目录
+    if (!workingDir) {
+      console.error('[Server] No environment variables found, using automatic project root detection');
+      // storage构造函数已经会自动检测项目根目录，所以这里不需要额外操作
+      return;
+    }
+    
+    // 3. 验证并设置工作目录
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      const resolvedPath = path.resolve(workingDir);
+      const stats = await fs.stat(resolvedPath);
+      
+      if (stats.isDirectory()) {
+        await storage.setWorkingDirectory(resolvedPath);
+        console.error(`[Server] Working directory set to: ${resolvedPath}`);
+      } else {
+        console.error(`[Server] Path is not a directory, falling back to auto-detection: ${resolvedPath}`);
+      }
+    } catch (error) {
+      console.error(`[Server] Failed to set working directory, falling back to auto-detection: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

@@ -42,12 +42,13 @@ pnpm install
 pnpm run build
 ```
 4. Add to your Cursor MCP configuration (typically located at `~/.cursor/mcp.json`):
+
 ```json
 {
   "mcpServers": {
     "software-planning-tool": {
-      "command": "/absolute/path/to/cloned/software-planning-tool/start-mcp.sh",
-      "args": [],
+      "command": "node",
+      "args": ["/absolute/path/to/cloned/software-planning-tool/build/index.js"],
       "disabled": false,
       "autoApprove": []
     }
@@ -55,9 +56,9 @@ pnpm run build
 }
 ```
 
-Replace `/absolute/path/to/cloned/software-planning-tool/` with the actual path where you cloned this repository.
+Replace `/absolute/path/to/cloned/software-planning-tool` with the actual path where you cloned this repository.
 
-**Important**: Use the `start-mcp.sh` script instead of directly calling the Node.js file to ensure proper working directory handling.
+**✨ Features**: The tool automatically detects project directories and handles Windows path formats correctly, making it cross-platform compatible without requiring additional startup scripts.
 
 ## How It Works 🔄
 
@@ -262,7 +263,6 @@ software-planning-tool/
   │   ├── storage.ts      # Data persistence and directory management
   │   └── types.ts        # TypeScript type definitions
   ├── build/              # Compiled JavaScript
-  ├── start-mcp.sh        # Startup script with proper directory handling
   ├── package.json
   └── tsconfig.json
 ```
@@ -285,7 +285,7 @@ pnpm run inspector
 1. **Plans not saving to the correct directory**:
    - Use `get_working_directory` to check the current directory
    - Use `set_working_directory` to change to your project directory
-   - Ensure you're using the `start-mcp.sh` script in your MCP configuration
+   - The tool now automatically detects project directories and provides helpful guidance
 
 2. **Permission errors**:
    - Ensure the tool has write permissions to your project directory

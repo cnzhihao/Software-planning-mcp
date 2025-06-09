@@ -53,7 +53,7 @@ export class Storage {
    * 更新所有路径基于当前工作目录
    */
   private updatePaths(): void {
-    this.cursorDir = path.join(this.currentWorkingDirectory, '.cursor');
+    this.cursorDir = path.join(this.currentWorkingDirectory, '.cursor', 'softwareplan');
     this.storagePath = path.join(this.cursorDir, 'data.json');
     this.planPath = path.join(this.cursorDir, 'plan.md');
     this.tasksPath = path.join(this.cursorDir, 'tasks.md');
@@ -67,7 +67,26 @@ export class Storage {
    * 允许用户动态更改工作目录
    */
   async setWorkingDirectory(directory: string): Promise<void> {
-    const resolvedPath = path.resolve(directory);
+    // 处理URL编码的路径（特别是Windows路径）
+    let normalizedDirectory = directory;
+    
+    // 解码URL编码的路径
+    if (directory.includes('%')) {
+      try {
+        normalizedDirectory = decodeURIComponent(directory);
+      } catch (error) {
+        console.error(`[Storage] Failed to decode URL path: ${directory}`);
+      }
+    }
+    
+    // 处理类似 /d:/github/... 的路径格式（转换为 D:\github\...）
+    if (process.platform === 'win32' && normalizedDirectory.match(/^\/[a-zA-Z]:/)) {
+      normalizedDirectory = normalizedDirectory.substring(1).replace(/\//g, '\\');
+      // 确保驱动器字母是大写的
+      normalizedDirectory = normalizedDirectory.charAt(0).toUpperCase() + normalizedDirectory.slice(1);
+    }
+    
+    const resolvedPath = path.resolve(normalizedDirectory);
     
     // 验证目录是否存在
     try {
