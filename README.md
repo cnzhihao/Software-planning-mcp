@@ -82,9 +82,10 @@ When you use the tool in a project, it creates:
 ```
 your-project/
 ├── .cursor/
-│   ├── data.json      # Structured data for AI consumption
-│   ├── plan.md        # Human-readable project plan
-│   └── tasks.md       # Human-readable task list
+│   ├── softwareplan/
+│       ├── data.json      # Structured data for AI consumption
+│       ├── plan.md        # Human-readable project plan
+│       └── tasks.md       # Human-readable task list
 └── ... (your project files)
 ```
 
