@@ -260,6 +260,10 @@ export class Storage {
     return this.data.goals[id] || null;
   }
 
+  async getAllGoals(): Promise<Goal[]> {
+    return Object.values(this.data.goals);
+  }
+
   async createPlan(goalId: string): Promise<ImplementationPlan> {
     const plan: ImplementationPlan = {
       goalId,

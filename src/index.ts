@@ -250,6 +250,20 @@ class SoftwarePlanningServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       switch (request.params.name) {
         case 'start_planning': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[start_planning] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[start_planning] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
           const { goal } = request.params.arguments as { goal: string };
           this.currentGoal = await storage.createGoal(goal);
           await storage.createPlan(this.currentGoal.id);
@@ -265,6 +279,20 @@ class SoftwarePlanningServer {
         }
 
         case 'save_plan': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[save_plan] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[save_plan] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
           if (!this.currentGoal) {
             throw new McpError(
               ErrorCode.InvalidRequest,
@@ -290,6 +318,20 @@ class SoftwarePlanningServer {
         }
 
         case 'add_todo': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[add_todo] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[add_todo] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
           if (!this.currentGoal) {
             throw new McpError(
               ErrorCode.InvalidRequest,
@@ -314,6 +356,20 @@ class SoftwarePlanningServer {
         }
 
         case 'remove_todo': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[remove_todo] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[remove_todo] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
           if (!this.currentGoal) {
             throw new McpError(
               ErrorCode.InvalidRequest,
@@ -335,6 +391,20 @@ class SoftwarePlanningServer {
         }
 
         case 'get_todos': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[get_todos] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[get_todos] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
           if (!this.currentGoal) {
             throw new McpError(
               ErrorCode.InvalidRequest,
@@ -355,6 +425,20 @@ class SoftwarePlanningServer {
         }
 
         case 'update_todo_status': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[update_todo_status] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[update_todo_status] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
           if (!this.currentGoal) {
             throw new McpError(
               ErrorCode.InvalidRequest,
@@ -386,25 +470,18 @@ class SoftwarePlanningServer {
           const fs = await import('fs/promises');
           const path = await import('path');
           
-          // 先检查工作目录是否正确
-          const currentDir = storage.getCurrentWorkingDirectory();
-          const isDefaultCursorDir = currentDir.includes('cursor') && !currentDir.includes('github');
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
           
-          if (isDefaultCursorDir) {
-            let message = '⚠️  检测到当前工作目录可能不是项目目录：' + currentDir;
-            message += '\n\n建议操作：';
-            message += '\n1. 调用 get_working_directory 确认当前工作目录';
-            message += '\n2. 如果不是项目目录，请调用 set_working_directory 设置到正确的项目目录';
-            message += '\n3. 然后重新获取开发计划';
-            
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: message,
-                },
-              ],
-            };
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[view_plan] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[view_plan] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
           }
           
           try {
@@ -435,25 +512,18 @@ class SoftwarePlanningServer {
           const fs = await import('fs/promises');
           const path = await import('path');
           
-          // 先检查工作目录是否正确
-          const currentDir = storage.getCurrentWorkingDirectory();
-          const isDefaultCursorDir = currentDir.includes('cursor') && !currentDir.includes('github');
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
           
-          if (isDefaultCursorDir) {
-            let message = '⚠️  检测到当前工作目录可能不是项目目录：' + currentDir;
-            message += '\n\n建议操作：';
-            message += '\n1. 调用 get_working_directory 确认当前工作目录';
-            message += '\n2. 如果不是项目目录，请调用 set_working_directory 设置到正确的项目目录';
-            message += '\n3. 然后重新获取开发任务';
-            
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: message,
-                },
-              ],
-            };
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[view_tasks] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[view_tasks] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
           }
           
           try {
@@ -543,6 +613,9 @@ class SoftwarePlanningServer {
       await storage.initialize();
       console.error('[Server] Storage initialized successfully');
       
+      // 恢复当前目标（如果存储中有数据）
+      await this.restoreCurrentGoal();
+      
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       console.error('Software Planning MCP server running on stdio');
@@ -592,6 +665,30 @@ class SoftwarePlanningServer {
       }
     } catch (error) {
       console.error(`[Server] Failed to set working directory, falling back to auto-detection: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * 恢复当前目标
+   * 如果存储中有目标数据，恢复最新的目标作为当前目标
+   */
+  private async restoreCurrentGoal(): Promise<void> {
+    try {
+      const goals = await storage.getAllGoals();
+      if (goals.length > 0) {
+        // 选择最新的目标作为当前目标
+        this.currentGoal = goals.reduce((latest: Goal, current: Goal) => 
+          new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+        );
+        if (this.currentGoal) {
+          console.error(`[Server] Restored current goal: ${this.currentGoal.id} - ${this.currentGoal.description}`);
+        }
+      } else {
+        console.error('[Server] No existing goals found');
+      }
+    } catch (error) {
+      console.error(`[Server] Failed to restore current goal: ${error instanceof Error ? error.message : String(error)}`);
+      // 不抛出错误，允许服务器继续启动
     }
   }
 }
