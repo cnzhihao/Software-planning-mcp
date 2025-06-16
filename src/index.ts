@@ -21,7 +21,7 @@ class SoftwarePlanningServer {
     this.server = new Server(
       {
         name: 'software-planning-tool',
-        version: '0.1.0',
+        version: '2.0.0',
       },
       {
         capabilities: {
@@ -111,8 +111,48 @@ class SoftwarePlanningServer {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
+          name: 'list_software_plans',
+          description: 'List all existing software plans in the current project. This should be the first step in the AI\'s decision-making process.',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'create_new_plan',
+          description: 'Create a new, independent software plan with a specific name and a top-level goal. This creates a new context for tasks and documentation.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              planName: {
+                type: 'string',
+                description: 'Name of the new plan (e.g., "feature-user-auth", "bugfix-payment-timeout")',
+              },
+              goal: {
+                type: 'string',
+                description: 'The top-level goal for this plan',
+              },
+            },
+            required: ['planName', 'goal'],
+          },
+        },
+        {
+          name: 'set_active_plan',
+          description: 'Set a specific plan as the active one. All subsequent operations (like adding todos or viewing plans) will target this active plan.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              planName: {
+                type: 'string',
+                description: 'Name of the plan to set as active',
+              },
+            },
+            required: ['planName'],
+          },
+        },
+        {
           name: 'start_planning',
-          description: 'Start a new planning session with a goal',
+          description: 'Acts as the main entry point to start planning a goal. The AI should use this to trigger the decision-making flow to determine if the goal belongs to an existing plan or requires a new one.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -126,7 +166,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'save_plan',
-          description: 'Save the current implementation plan',
+          description: 'Save the implementation plan for the **currently active** software plan.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -140,7 +180,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'add_todo',
-          description: 'Add a new todo item to the current plan',
+          description: 'Add a new todo item to the **currently active** plan.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -168,7 +208,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'remove_todo',
-          description: 'Remove a todo item from the current plan',
+          description: 'Remove a todo item from the **currently active** plan.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -182,7 +222,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'get_todos',
-          description: 'Get all todos in the current plan',
+          description: 'Get all todos in the **currently active** plan.',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -190,7 +230,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'update_todo_status',
-          description: 'Update the completion status of a todo item',
+          description: 'Update the completion status of a todo item in the **currently active** plan.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -208,7 +248,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'view_plan',
-          description: 'View the current project plan in markdown format',
+          description: 'View the markdown content of the **currently active** project plan.',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -216,7 +256,7 @@ class SoftwarePlanningServer {
         },
         {
           name: 'view_tasks',
-          description: 'View the current project tasks in markdown format',
+          description: 'View the markdown content of the **currently active** project tasks.',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -249,6 +289,115 @@ class SoftwarePlanningServer {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       switch (request.params.name) {
+        case 'list_software_plans': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[list_software_plans] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[list_software_plans] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
+          const plans = await storage.listPlans();
+          const currentPlan = storage.getCurrentPlan();
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  plans,
+                  currentActivePlan: currentPlan,
+                  totalPlans: plans.length,
+                  message: plans.length === 0 ? 'No plans found. This appears to be a new project.' : `Found ${plans.length} plan(s). Current active plan: ${currentPlan}`
+                }, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'create_new_plan': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[create_new_plan] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[create_new_plan] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
+          const { planName, goal } = request.params.arguments as { planName: string; goal: string };
+
+          try {
+            await storage.createNewPlan(planName, goal);
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Successfully created new plan '${planName}' with goal: ${goal}`,
+                },
+              ],
+            };
+          } catch (error) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              `Failed to create plan: ${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+        }
+
+        case 'set_active_plan': {
+          // 直接获取当前目录并重置工作目录
+          const currentProcessDir = process.cwd();
+          const currentStorageDir = storage.getCurrentWorkingDirectory();
+          
+          // 如果存储的工作目录与当前进程目录不一致，则更新工作目录
+          if (currentStorageDir !== currentProcessDir) {
+            try {
+              await storage.setWorkingDirectory(currentProcessDir);
+              console.error(`[set_active_plan] 工作目录已更新为: ${currentProcessDir}`);
+            } catch (error) {
+              console.error(`[set_active_plan] 更新工作目录失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
+          const { planName } = request.params.arguments as { planName: string };
+
+          try {
+            const previousPlan = storage.getCurrentPlan();
+            await storage.setActivePlan(planName);
+            
+            // 更新当前目标
+            await this.restoreCurrentGoal();
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Successfully switched from plan '${previousPlan}' to '${planName}'. This is now the active plan for all operations.`,
+                },
+              ],
+            };
+          } catch (error) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              `Failed to set active plan: ${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+        }
+
         case 'start_planning': {
           // 直接获取当前目录并重置工作目录
           const currentProcessDir = process.cwd();
@@ -265,17 +414,39 @@ class SoftwarePlanningServer {
           }
 
           const { goal } = request.params.arguments as { goal: string };
-          this.currentGoal = await storage.createGoal(goal);
-          await storage.createPlan(this.currentGoal.id);
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: SEQUENTIAL_THINKING_PROMPT,
-              },
-            ],
-          };
+          
+          // AI决策流程：检查现有计划
+          const plans = await storage.listPlans();
+          
+          if (plans.length === 0) {
+            // 新项目，自动创建main计划
+            await storage.createNewPlan('main', goal);
+            await storage.setActivePlan('main');
+            this.currentGoal = await storage.createGoal(goal);
+            await storage.createPlan(this.currentGoal.id);
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `🎯 **新项目开始！**\n\n检测到这是一个全新的项目，已自动创建 'main' 计划。\n\n**目标**: ${goal}\n**当前活动计划**: main\n\n${SEQUENTIAL_THINKING_PROMPT}`,
+                },
+              ],
+            };
+          } else {
+            // 有现有计划，需要AI决策
+            const currentPlan = storage.getCurrentPlan();
+            const plansInfo = plans.map(plan => `- ${plan}${plan === currentPlan ? ' (当前活动)' : ''}`).join('\n');
+            
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `🤔 **计划决策时间！**\n\n您提出的目标：**${goal}**\n\n当前项目已有以下计划：\n${plansInfo}\n\n**请分析这个目标并决定：**\n1. 这个目标是否属于某个现有计划的延伸？\n2. 还是需要创建一个全新的独立计划？\n\n**决策指南：**\n- 如果是现有功能的增强、Bug修复或相关任务 → 使用现有计划\n- 如果是全新功能、架构重构或独立模块 → 创建新计划\n\n**下一步操作：**\n- 如需添加到现有计划：使用 \`set_active_plan\` 切换到目标计划\n- 如需创建新计划：使用 \`create_new_plan\` 创建新计划\n- 然后再次调用 \`start_planning\` 开始规划\n\n💡 **提示**: 创建新计划时，建议使用描述性名称，如 'feature-user-auth'、'bugfix-payment-timeout' 等。`,
+                },
+              ],
+            };
+          }
         }
 
         case 'save_plan': {
@@ -485,7 +656,8 @@ class SoftwarePlanningServer {
           }
           
           try {
-            const planPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan', 'plan.md');
+            const currentPlan = storage.getCurrentPlan();
+            const planPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan', currentPlan, 'plan.md');
             const planContent = await fs.readFile(planPath, 'utf-8');
             
             return {
@@ -497,11 +669,12 @@ class SoftwarePlanningServer {
               ],
             };
           } catch (error) {
+            const currentPlan = storage.getCurrentPlan();
             return {
               content: [
                 {
                   type: 'text',
-                  text: '未找到计划文件。请先创建一个开发计划。',
+                  text: `未找到计划文件。当前活动计划: ${currentPlan}\n请先为当前计划创建一个开发计划。`,
                 },
               ],
             };
@@ -527,7 +700,8 @@ class SoftwarePlanningServer {
           }
           
           try {
-            const tasksPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan', 'tasks.md');
+            const currentPlan = storage.getCurrentPlan();
+            const tasksPath = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan', currentPlan, 'tasks.md');
             const tasksContent = await fs.readFile(tasksPath, 'utf-8');
             
             return {
@@ -539,11 +713,12 @@ class SoftwarePlanningServer {
               ],
             };
           } catch (error) {
+            const currentPlan = storage.getCurrentPlan();
             return {
               content: [
                 {
                   type: 'text',
-                  text: '未找到任务文件。请先创建一个开发计划。',
+                  text: `未找到任务文件。当前活动计划: ${currentPlan}\n请先为当前计划创建一个开发计划。`,
                 },
               ],
             };
@@ -580,13 +755,15 @@ class SoftwarePlanningServer {
 
         case 'get_working_directory': {
           const path = await import('path');
-          const planDir = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan');
+          const currentPlan = storage.getCurrentPlan();
+          const baseDir = path.join(storage.getCurrentWorkingDirectory(), '.cursor', 'softwareplan');
+          const currentPlanDir = path.join(baseDir, currentPlan);
           
           return {
             content: [
               {
                 type: 'text',
-                text: `当前工作目录: ${storage.getCurrentWorkingDirectory()}\n计划文件位置: ${planDir}`,
+                text: `当前工作目录: ${storage.getCurrentWorkingDirectory()}\n基础计划目录: ${baseDir}\n当前活动计划: ${currentPlan}\n当前计划文件位置: ${currentPlanDir}`,
               },
             ],
           };
