@@ -52,9 +52,39 @@ export class Storage {
   }
 
   /**
+   * 验证并清理计划名称，防止路径遍历攻击
+   */
+  private sanitizePlanName(planName: string): string {
+    // 检查计划名称是否符合安全规范：字母、数字、连字符、下划线，且不以连字符开头
+    const validPlanRegex = /^[a-zA-Z0-9][a-zA-Z0-9\-_]*$/;
+    
+    if (!planName || !validPlanRegex.test(planName)) {
+      console.error(`[Storage] Invalid plan name detected: "${planName}". Resetting to 'main'.`);
+      return 'main';
+    }
+    
+    // 额外检查：确保不包含路径分隔符和特殊字符
+    if (planName.includes('..') || planName.includes('/') || planName.includes('\\') || planName.includes('\0')) {
+      console.error(`[Storage] Plan name contains unsafe characters: "${planName}". Resetting to 'main'.`);
+      return 'main';
+    }
+    
+    return planName;
+  }
+
+  /**
    * 更新所有路径基于当前工作目录和当前计划
    */
   private updatePaths(): void {
+    // 防御性验证：确保currentPlan是安全的
+    const safePlanName = this.sanitizePlanName(this.currentPlan);
+    
+    // 如果计划名称被清理，更新currentPlan
+    if (safePlanName !== this.currentPlan) {
+      console.error(`[Storage] Plan name sanitized from "${this.currentPlan}" to "${safePlanName}"`);
+      this.currentPlan = safePlanName;
+    }
+    
     this.baseStorageDir = path.join(this.currentWorkingDirectory, '.cursor', 'softwareplan');
     this.cursorDir = path.join(this.baseStorageDir, this.currentPlan);
     this.storagePath = path.join(this.cursorDir, 'data.json');
@@ -139,6 +169,7 @@ export class Storage {
 
   /**
    * 将V1.0数据迁移到V2.0格式
+   * 安全的迁移策略：先备份，再迁移，如果失败则回滚
    */
   private async migrateV1ToV2(): Promise<void> {
     console.error(`[Storage] Migrating V1.0 data to V2.0 format...`);
@@ -147,52 +178,92 @@ export class Storage {
     const v1PlanPath = path.join(this.baseStorageDir, 'plan.md');
     const v1TasksPath = path.join(this.baseStorageDir, 'tasks.md');
     
+    const backupDir = path.join(this.baseStorageDir, 'v1-backup');
     const mainPlanDir = path.join(this.baseStorageDir, 'main');
     
+    const filesToMigrate = [
+      { source: v1DataPath, name: 'data.json', required: true },
+      { source: v1PlanPath, name: 'plan.md', required: false },
+      { source: v1TasksPath, name: 'tasks.md', required: false }
+    ];
+    
+    const backupOperations: { from: string; to: string }[] = [];
+    
     try {
-      // 创建main计划目录
+      // 第一步：创建必要的目录
+      await fs.mkdir(backupDir, { recursive: true });
       await fs.mkdir(mainPlanDir, { recursive: true });
       
-      // 迁移数据文件
-      await fs.copyFile(v1DataPath, path.join(mainPlanDir, 'data.json'));
-      
-      // 迁移markdown文件（如果存在）
-      try {
-        await fs.copyFile(v1PlanPath, path.join(mainPlanDir, 'plan.md'));
-      } catch {
-        // plan.md不存在，忽略
+      // 第二步：安全备份所有文件（先移动到备份目录）
+      console.error(`[Storage] Step 1: Backing up original files...`);
+      for (const file of filesToMigrate) {
+        try {
+          const backupPath = path.join(backupDir, file.name);
+          await fs.stat(file.source); // 检查文件是否存在
+          await fs.rename(file.source, backupPath);
+          backupOperations.push({ from: file.source, to: backupPath });
+          console.error(`[Storage] Backed up: ${file.name}`);
+        } catch (error) {
+          if (file.required) {
+            throw new Error(`Failed to backup required file ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+          } else {
+            console.error(`[Storage] Optional file ${file.name} not found, skipping`);
+          }
+        }
       }
       
-      try {
-        await fs.copyFile(v1TasksPath, path.join(mainPlanDir, 'tasks.md'));
-      } catch {
-        // tasks.md不存在，忽略
-      }
-      
-      // 备份原文件然后删除
-      const backupDir = path.join(this.baseStorageDir, 'v1-backup');
-      await fs.mkdir(backupDir, { recursive: true });
-      
-      await fs.rename(v1DataPath, path.join(backupDir, 'data.json'));
-      
-      try {
-        await fs.rename(v1PlanPath, path.join(backupDir, 'plan.md'));
-      } catch {
-        // plan.md不存在，忽略
-      }
-      
-      try {
-        await fs.rename(v1TasksPath, path.join(backupDir, 'tasks.md'));
-      } catch {
-        // tasks.md不存在，忽略
+      // 第三步：从备份目录复制到main目录
+      console.error(`[Storage] Step 2: Copying files to 'main' plan directory...`);
+      for (const operation of backupOperations) {
+        try {
+          const fileName = path.basename(operation.to);
+          const targetPath = path.join(mainPlanDir, fileName);
+          await fs.copyFile(operation.to, targetPath);
+          console.error(`[Storage] Copied: ${fileName} to main plan`);
+        } catch (error) {
+          // 如果复制失败，尝试回滚
+          console.error(`[Storage] Failed to copy ${path.basename(operation.to)}, attempting rollback...`);
+          await this.rollbackMigration(backupOperations, mainPlanDir);
+          throw new Error(`Failed to copy file to main directory: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       
       console.error(`[Storage] V1.0 data successfully migrated to 'main' plan`);
       console.error(`[Storage] V1.0 backup saved to: ${backupDir}`);
       
     } catch (error) {
-      console.error(`[Storage] Failed to migrate V1.0 data: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[Storage] Migration failed: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Migration failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  /**
+   * 回滚失败的迁移操作
+   */
+  private async rollbackMigration(backupOperations: { from: string; to: string }[], mainPlanDir: string): Promise<void> {
+    console.error(`[Storage] Rolling back migration...`);
+    
+    try {
+      // 删除可能已创建的main目录
+      try {
+        await fs.rmdir(mainPlanDir, { recursive: true });
+      } catch {
+        // 忽略删除失败
+      }
+      
+      // 将备份文件还原到原位置
+      for (const operation of backupOperations) {
+        try {
+          await fs.rename(operation.to, operation.from);
+          console.error(`[Storage] Restored: ${path.basename(operation.from)}`);
+        } catch (error) {
+          console.error(`[Storage] Failed to restore ${path.basename(operation.from)}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      
+      console.error(`[Storage] Rollback completed`);
+    } catch (error) {
+      console.error(`[Storage] Rollback failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -220,9 +291,10 @@ export class Storage {
    * 创建新计划
    */
   async createNewPlan(planName: string, goal?: string): Promise<void> {
-    // 验证计划名称
-    if (!planName || planName.includes('/') || planName.includes('\\')) {
-      throw new Error('Invalid plan name. Plan name cannot contain path separators.');
+    // 严格验证计划名称，防止路径遍历攻击
+    const sanitizedName = this.sanitizePlanName(planName);
+    if (sanitizedName !== planName) {
+      throw new Error(`Invalid plan name: "${planName}". Plan names must contain only letters, numbers, hyphens, and underscores, and cannot start with a hyphen.`);
     }
     
     const planDir = path.join(this.baseStorageDir, planName);
@@ -273,6 +345,12 @@ export class Storage {
    * 设置活动计划
    */
   async setActivePlan(planName: string): Promise<void> {
+    // 验证计划名称的安全性
+    const sanitizedName = this.sanitizePlanName(planName);
+    if (sanitizedName !== planName) {
+      throw new Error(`Invalid plan name: "${planName}". Plan names must contain only letters, numbers, hyphens, and underscores, and cannot start with a hyphen.`);
+    }
+    
     const plans = await this.listPlans();
     
     if (!plans.includes(planName)) {

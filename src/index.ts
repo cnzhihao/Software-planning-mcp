@@ -376,11 +376,12 @@ class SoftwarePlanningServer {
           const { planName } = request.params.arguments as { planName: string };
 
           try {
-            const previousPlan = storage.getCurrentPlan();
-            await storage.setActivePlan(planName);
-            
-            // 更新当前目标
-            await this.restoreCurrentGoal();
+const previousPlan = storage.getCurrentPlan();
+await storage.setActivePlan(planName);
+
+// 清理旧目标，避免跨计划污染
+this.currentGoal = null;
+await this.restoreCurrentGoal();
             
             return {
               content: [
@@ -853,15 +854,15 @@ class SoftwarePlanningServer {
     try {
       const goals = await storage.getAllGoals();
       if (goals.length > 0) {
-        // 选择最新的目标作为当前目标
-        this.currentGoal = goals.reduce((latest: Goal, current: Goal) => 
+        this.currentGoal = goals.reduce((latest, current) =>
           new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
         );
         if (this.currentGoal) {
           console.error(`[Server] Restored current goal: ${this.currentGoal.id} - ${this.currentGoal.description}`);
         }
       } else {
-        console.error('[Server] No existing goals found');
+        this.currentGoal = null;
+        console.error('[Server] No existing goals found – currentGoal cleared');
       }
     } catch (error) {
       console.error(`[Server] Failed to restore current goal: ${error instanceof Error ? error.message : String(error)}`);
