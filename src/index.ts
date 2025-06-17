@@ -9,6 +9,8 @@ import {
   McpError,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 import { storage } from './storage.js';
 import { SEQUENTIAL_THINKING_PROMPT, formatPlanAsTodos } from './prompts.js';
 import { Goal, Todo } from './types.js';
@@ -806,28 +808,77 @@ await this.restoreCurrentGoal();
 
   /**
    * 自动初始化工作目录
-   * 优先级：环境变量 > 项目根目录检测 > 当前工作目录
+   * 优先级：基于index.js位置推断 > 有效的环境变量 > 项目根目录检测 > 当前工作目录
    */
   private async initializeWorkingDirectory(): Promise<void> {
     let workingDir: string | null = null;
     
-    // 1. 尝试从环境变量获取（兼容原有的启动脚本方式）
-    if (process.env.PWD && process.env.PWD !== process.cwd()) {
-      workingDir = process.env.PWD;
-      console.error(`[Server] Using PWD environment variable: ${workingDir}`);
-    } else if (process.env.INIT_CWD && process.env.INIT_CWD !== process.cwd()) {
-      workingDir = process.env.INIT_CWD;
-      console.error(`[Server] Using INIT_CWD environment variable: ${workingDir}`);
+    // 1. 首先尝试根据index.js的位置推断项目根目录（最可靠的方法）
+    try {
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      // build/index.js -> project root
+      const projectRoot = resolve(__dirname, '..');
+      
+      const fs = await import('fs/promises');
+      const stats = await fs.stat(projectRoot);
+      
+              if (stats.isDirectory()) {
+          // 验证这确实是项目根目录（检查是否有package.json等标识文件）
+          const packageJsonPath = resolve(projectRoot, 'package.json');
+          try {
+            await fs.stat(packageJsonPath);
+            // 检查是否有写权限
+            try {
+              await fs.access(projectRoot, fs.constants.W_OK);
+              workingDir = projectRoot;
+              console.error(`[Server] Inferred project root from index.js location: ${workingDir}`);
+            } catch {
+              console.error(`[Server] No write permission for inferred project root: ${projectRoot}`);
+            }
+          } catch {
+            console.error(`[Server] No package.json found in inferred project root: ${projectRoot}`);
+          }
+        }
+    } catch (error) {
+      console.error(`[Server] Failed to infer project root from index.js location: ${error instanceof Error ? error.message : String(error)}`);
     }
     
-    // 2. 如果环境变量不可用，让storage自动检测项目根目录
+    // 2. 如果推断失败，尝试从环境变量获取（兼容原有的启动脚本方式）
     if (!workingDir) {
-      console.error('[Server] No environment variables found, using automatic project root detection');
+      if (process.env.PWD && process.env.PWD !== process.cwd()) {
+        // 验证环境变量指向的目录是否有项目标识文件
+        try {
+          const fs = await import('fs/promises');
+          const packageJsonPath = resolve(process.env.PWD, 'package.json');
+          await fs.stat(packageJsonPath);
+          workingDir = process.env.PWD;
+          console.error(`[Server] Using PWD environment variable: ${workingDir}`);
+        } catch {
+          console.error(`[Server] PWD environment variable does not point to a valid project directory: ${process.env.PWD}`);
+        }
+      } else if (process.env.INIT_CWD && process.env.INIT_CWD !== process.cwd()) {
+        // 验证环境变量指向的目录是否有项目标识文件
+        try {
+          const fs = await import('fs/promises');
+          const packageJsonPath = resolve(process.env.INIT_CWD, 'package.json');
+          await fs.stat(packageJsonPath);
+          workingDir = process.env.INIT_CWD;
+          console.error(`[Server] Using INIT_CWD environment variable: ${workingDir}`);
+        } catch {
+          console.error(`[Server] INIT_CWD environment variable does not point to a valid project directory: ${process.env.INIT_CWD}`);
+        }
+      }
+    }
+    
+    // 3. 如果还是没有找到合适的目录，让storage自动检测项目根目录
+    if (!workingDir) {
+      console.error('[Server] No suitable working directory found, using automatic project root detection');
       // storage构造函数已经会自动检测项目根目录，所以这里不需要额外操作
       return;
     }
     
-    // 3. 验证并设置工作目录
+    // 4. 验证并设置工作目录
     try {
       const fs = await import('fs/promises');
       const path = await import('path');
